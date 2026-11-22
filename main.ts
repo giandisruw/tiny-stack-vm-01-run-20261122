@@ -15,9 +15,10 @@ const T = [[0, 0, 0, 0], [1, 1, 0, 1], [2, 4, 0, 1], [3, 0, 1, 0], [4, 0, 1, 2],
   [34, 0, 2, 1], [48, 2, 0, 0], [49, 2, 1, 0], [50, 2, 1, 0], [51, 2, 0, 0],
   [52, 0, 0, 0], [64, 0, 1, 1], [65, 0, 2, 0], [80, 0, 1, 0], [81, 0, 1, 0],
   [82, 0, 0, 1], [83, 0, 1, 0]];
-const imm = new Uint8Array(256), pops = new Uint8Array(256),
-  push = new Uint8Array(256), known = new Uint8Array(256);
-for (const [o, i, p, q] of T) { imm[o] = i; pops[o] = p; push[o] = q; known[o] = 1; }
+// One packed word per opcode: imm | pops<<8 | push<<16 | 1<<24 (known).
+// One table lookup per step instead of four (imm/pops/push/known).
+const tab = new Uint32Array(256);
+for (const [o, i, p, q] of T) tab[o] = i | (p << 8) | (q << 16) | 16777216;
 
 // Returns [output buffer, output length, exit code].
 function run(p, inp) {
@@ -29,14 +30,14 @@ function run(p, inp) {
   for (;;) {
     if (steps === 1000000) return end(10);
     if (pc < 0 || pc >= n) return end(9);
-    const op = p[pc];
-    if (!known[op]) return end(5);
-    const im = imm[op];
+    const op = p[pc], t = tab[op];
+    if (t < 16777216) return end(5);
+    const im = t & 255;
     if (pc + im >= n) return end(9);
     steps++;
-    const po = pops[op];
+    const po = (t >> 8) & 255;
     if (sp < po) return end(2);
-    if (sp - po + push[op] > 256) return end(3);
+    if (sp - po + ((t >> 16) & 255) > 256) return end(3);
     const nx = pc + 1 + im;
     pc = nx;
     switch (op) {
